@@ -1,0 +1,24 @@
+[package]
+name = "wevt_template"
+version = "0.1.0"
+authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
+edition = "2018"
+
+[dependencies]
+goblin = {version="0.2", features=["pe32", "pe64"]}
+log = "0.4"
+byteorder = "1"
+clap = "2"
+fern = "0.5"
+chrono = "0.4"
+better-panic = "0.2"
+anyhow = "1"
+thiserror = "1"
+hex = "0.4"
+tempfile = "3"
+simple_logger = "1"
+bitflags = "1"
+widestring = "0.4"
+
+[profile.release]
+lto = true
