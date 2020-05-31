@@ -19,6 +19,7 @@ tempfile = "3"
 simple_logger = "1"
 bitflags = "1"
 widestring = "0.4"
+uuid = "0.8"
 
 [profile.release]
 lto = true

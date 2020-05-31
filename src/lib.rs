@@ -28,7 +28,7 @@ struct CRIM {
 
 #[derive(Debug)]
 struct EventProviderDescriptor {
-    guid: [u8; 16],
+    guid: uuid::Uuid,
     offset: u32,
 }
 
@@ -71,6 +71,21 @@ impl WevtTemplate {
         buf.copy_from_slice(&self.buf[offset..offset+buf.len()]);
         Ok(())
     }
+
+    fn read_guid(&self, offset: usize) -> Result<uuid::Uuid> {
+        let mut guid = [0u8; 16];
+        self.read_into(offset + 0, &mut guid);
+
+        // u32be
+        guid.swap(0, 3);
+        guid.swap(1, 2);
+        // u16be
+        guid.swap(4, 5);
+        // u16be
+        guid.swap(6, 7);
+
+        guid: uuid::Builder::from_bytes(guid).build()
+    }
 }
 
 impl CRIM {
@@ -96,10 +111,8 @@ impl CRIM {
 
 impl EventProviderDescriptor {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<EventProviderDescriptor> {
-        let mut guid = [0u8; 16];
-        tmpl.read_into(offset + 0, &mut guid);
         Ok(EventProviderDescriptor {
-            guid,
+            guid: tmpl.read_guid(offset + 0)?,
             offset: tmpl.read_u32(offset + 16)?,
         })
     }
@@ -286,19 +299,19 @@ pub fn get_wevt_templates(pe: &pe::PE) -> Result<Vec<WevtTemplate>> {
             (rsrc::NodeIdentifier::ID(langid), rsrc::NodeChild::Data(descriptor)) => {
                 debug!("WEVT_TEMPLATE: lang: {:} offset: {:#x} size: {:#x}", langid, descriptor.rva, descriptor.size);
                 let buf = descriptor.data(&pe)?;
-                debug!("\n{}", util::hexdump(&buf[..0x800], 0x0));
+                debug!("\n{}", util::hexdump(&buf[..0x400], 0x0));
 
                 let tmpl = WevtTemplate{langid, buf};
                 let crim = CRIM::read(&tmpl, 0x0)?;
                 debug!("crim: {:#x?}", crim);
 
-                for event_provider_ref in crim.event_providers.iter() {
+                for (i, event_provider_ref) in crim.event_providers.iter().enumerate() {
                     let event_provider = crim.event_providers[0].event_provider(&tmpl)?;
-                    debug!("event_provider]: {:#x?}", event_provider);
+                    debug!("event_provider[{}]: {:#x?}", i, event_provider);
 
-                    for elem_ref in event_provider.element_descriptors.iter() {
+                    for (j, elem_ref) in event_provider.element_descriptors.iter().enumerate() {
                         let elem = elem_ref.element(&tmpl)?;
-                        debug!("element: {:#x?}", elem);
+                        debug!("element[{}]: {:#x?}", j, elem);
 
                         if let Element::CHAN(chan) = elem {
                             let cd = &chan.channel_definitions[0];
