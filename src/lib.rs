@@ -1,5 +1,5 @@
 use anyhow::{Result};
-use log::{debug};
+use log::{warn, debug};
 use byteorder::{ByteOrder, LittleEndian};
 use crate::pe::PEError::FormatNotSupported;
 
@@ -49,6 +49,11 @@ struct ElementDescriptor {
 
 
 impl WevtTemplate {
+    fn read_u8(&self, offset: usize) -> Result<u8> {
+        // TODO: bounds check
+        Ok(self.buf[offset])
+    }
+
     fn read_u16(&self, offset: usize) -> Result<u16> {
         // TODO: bounds check
         let buf = &self.buf[offset..offset+2];
@@ -84,7 +89,7 @@ impl WevtTemplate {
         // u16be
         guid.swap(6, 7);
 
-        guid: uuid::Builder::from_bytes(guid).build()
+        Ok(uuid::Builder::from_bytes(guid).build())
     }
 }
 
@@ -161,7 +166,11 @@ impl ElementDescriptor {
 
         match &signature[..] {
             b"CHAN" => Ok(Element::CHAN(CHAN::read(tmpl, self.offset as usize)?)),
-            _ => todo!(),
+            b"TTBL" => Ok(Element::TTBL(TTBL::read(tmpl, self.offset as usize)?)),
+            _ => {
+                warn!("unsupported element: {}", String::from_utf8_lossy(&signature));
+                todo!()
+            },
         }
     }
 }
@@ -254,10 +263,119 @@ struct EVTN {}
 struct OPCO {}
 #[derive(Debug)]
 struct TASK {}
+
 #[derive(Debug)]
-struct TTBL {}
+struct VariableDescriptor {
+    value_type: u8,
+    offset: u32,
+}
+
+impl VariableDescriptor {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<VariableDescriptor> {
+        Ok(VariableDescriptor {
+            value_type: tmpl.read_u8(offset + 4)?,
+            offset: tmpl.read_u32(offset + 16)?,
+        })
+    }
+}
+
 #[derive(Debug)]
-struct TEMP {}
+struct VariableName {
+    value: Vec<u8>,
+}
+
+impl VariableName {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<VariableName> {
+        let size = tmpl.read_u32(offset + 0)?;
+        let value = tmpl.read_buf(offset + 4, size as usize - 4)?;
+        Ok(VariableName { value })
+    }
+
+    fn string(&self) -> Result<String> {
+        let chars: Vec<u16> = self.value
+            .chunks_exact(2)
+            .map(|buf| LittleEndian::read_u16(buf))
+            .collect();
+
+        widestring::U16String::from_vec(chars).to_string().map_err(|e| e.into())
+    }
+}
+
+#[derive(Debug)]
+struct TEMP {
+    signature: u32,
+    size: u32,
+    offset: u32,
+    guid: uuid::Uuid,
+    bxml: Vec<u8>,
+    variable_descriptors: Vec<VariableDescriptor>,
+    variable_names: Vec<VariableName>,
+}
+
+
+impl TEMP {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<TEMP> {
+        let buf = tmpl.read_buf(offset + 40, 0x100)?;
+
+        debug!("binxml:\n{}", util::hexdump(&buf, 0x0));
+
+        let de = evtx::binxml::deserializer::BinXmlDeserializer::init(
+            &buf,
+            0x0,
+            None,
+            false,
+            encoding::all::WINDOWS_1252,
+        );
+
+        let mut iterator = de.iter_tokens(None)?;
+
+        loop {
+            let token = iterator.next();
+            if let Some(t) = token {
+                debug!("token: {:#x?}", t);
+            } else {
+                break;
+            }
+        }
+
+        Ok(TEMP {
+            signature: tmpl.read_u32(offset + 0)?,
+            size: tmpl.read_u32(offset + 4)?,
+            offset: tmpl.read_u32(offset + 16)?,
+            guid: tmpl.read_guid(offset + 24)?,
+            // TODO
+            bxml: vec![],  // how long is this??
+            variable_descriptors: vec![],
+            variable_names: vec![],
+        })
+    }
+}
+
+#[derive(Debug)]
+struct TTBL {
+    signature: u32,
+    size: u32,
+    templates: Vec<TEMP>,
+}
+
+impl TTBL {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<TTBL> {
+        let count = tmpl.read_u32(offset + 8)?;
+        let mut templates = vec![];
+        let mut bytes_read = 0;
+        for i in 0..count {
+            let temp = TEMP::read(tmpl, offset + 12 + bytes_read)?;
+            bytes_read += temp.size as usize;
+            templates.push(temp);
+        }
+
+        Ok(TTBL {
+            signature: tmpl.read_u32(offset + 0)?,
+            size: tmpl.read_u32(offset + 4)?,
+            templates,
+        })
+    }
+}
 
 #[derive(Debug)]
 enum Element {
