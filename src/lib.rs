@@ -1,6 +1,7 @@
 use anyhow::{Result};
 use log::{debug};
 use byteorder::{ByteOrder, LittleEndian};
+use crate::pe::PEError::FormatNotSupported;
 
 pub mod util;
 pub mod pagemap;
@@ -16,61 +17,36 @@ pub struct WevtTemplate {
     buf: Vec<u8>,
 }
 
+#[derive(Debug)]
 struct CRIM {
     signature: u32,
     size: u32,
     major_version: u16,
     minor_version: u16,
-    // TODO: remove these `count` fields, since they're implicit the array
-    event_provider_count: u32,
     event_providers: Vec<EventProviderDescriptor>,
 }
 
+#[derive(Debug)]
 struct EventProviderDescriptor {
-    guid: Vec<u8>,  // TODO: [u8; 16]
+    guid: [u8; 16],
     offset: u32,
 }
 
+#[derive(Debug)]
 struct WEVT {
     signature: u32,
     size: u32,
     message_table_identifier: Option<u32>,
-    element_descriptor_count: u32,
-    unk_count: u32,
     element_descriptors: Vec<ElementDescriptor>,
     unk: Vec<u32>,
 }
 
+#[derive(Debug)]
 struct ElementDescriptor {
     offset: u32,
     unk: u32,
 }
 
-struct KEYW {}
-struct LEVL {}
-struct MAPS {}
-struct BMAP {}
-struct VMAP {}
-struct CHAN {}
-struct EVTN {}
-struct OPCO {}
-struct TASK {}
-struct TTBL {}
-struct TEMP {}
-
-enum Element {
-    KEYW(KEYW),
-    LEVL(LEVL),
-    MAPS(MAPS),
-    BMAP(BMAP),
-    VMAP(VMAP),
-    CHAN(CHAN),
-    EVTN(EVTN),
-    OPCO(OPCO),
-    TASK(TASK),
-    TTBL(TTBL),
-    TEMP(TEMP),
-}
 
 impl WevtTemplate {
     fn read_u16(&self, offset: usize) -> Result<u16> {
@@ -89,17 +65,22 @@ impl WevtTemplate {
         // TODO: bounds check
         Ok(self.buf[offset..offset+length].to_vec())
     }
+
+    fn read_into(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        // TODO: bounds check
+        buf.copy_from_slice(&self.buf[offset..offset+buf.len()]);
+        Ok(())
+    }
 }
 
 impl CRIM {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<CRIM> {
-        let event_provider_count = tmpl.read_u32(offset + 14)?;
+        let event_provider_count = tmpl.read_u32(offset + 12)?;
         let mut event_providers = vec![];
 
-        let mut offset = offset + 0x18;
-        for _ in 0..event_provider_count {
-            event_providers.push(EventProviderDescriptor::read(tmpl, offset)?);
-            offset += 0x20;
+        for i in 0..event_provider_count {
+            let descriptor = EventProviderDescriptor::read(tmpl, offset + 16 + (20 * i as usize))?;
+            event_providers.push(descriptor);
         }
 
         Ok(CRIM {
@@ -107,16 +88,18 @@ impl CRIM {
             size: tmpl.read_u32(offset + 4)?,
             major_version: tmpl.read_u16(offset + 8)?,
             minor_version: tmpl.read_u16(offset + 10)?,
-            event_provider_count, // offset + 14
-            event_providers,  // offset + 18
+            // event_provider_count, offset + 12
+            event_providers,  // offset + 16
         })
     }
 }
 
 impl EventProviderDescriptor {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<EventProviderDescriptor> {
+        let mut guid = [0u8; 16];
+        tmpl.read_into(offset + 0, &mut guid);
         Ok(EventProviderDescriptor {
-            guid: tmpl.read_buf(offset + 0, 16)?,
+            guid,
             offset: tmpl.read_u32(offset + 16)?,
         })
     }
@@ -143,14 +126,13 @@ impl WEVT {
             signature: tmpl.read_u32(offset + 0)?,
             size: tmpl.read_u32(offset + 4)?,
             message_table_identifier,  // offset + 8
-            element_descriptor_count,  // offset + 12
-            unk_count: tmpl.read_u32(offset + 16)?,
+            // element_descriptor_count,  offset + 12
+            // unk_count, offset + 16
             element_descriptors,      // offset + 20
             unk: vec![],              // offset + varies
         })
     }
 }
-
 
 impl ElementDescriptor {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<ElementDescriptor> {
@@ -161,8 +143,122 @@ impl ElementDescriptor {
     }
 
     fn element(&self, tmpl: &WevtTemplate) -> Result<Element> {
-        todo!()
+        let mut signature = [0u8; 4];
+        tmpl.read_into(self.offset as usize, &mut signature)?;
+
+        match &signature[..] {
+            b"CHAN" => Ok(Element::CHAN(CHAN::read(tmpl, self.offset as usize)?)),
+            _ => todo!(),
+        }
     }
+}
+
+#[derive(Debug)]
+struct KEYW {}
+#[derive(Debug)]
+struct LEVL {}
+#[derive(Debug)]
+struct MAPS {}
+#[derive(Debug)]
+struct BMAP {}
+#[derive(Debug)]
+struct VMAP {}
+
+#[derive(Debug)]
+struct ChannelDefinition {
+    identifier: u32,
+    offset: u32,
+    message_table_identifier: Option<u32>,
+}
+
+impl ChannelDefinition {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<ChannelDefinition> {
+        let message_table_identifier = match tmpl.read_u32(offset + 12)? {
+            0xFFFFFFFF => None,
+            id @ 0 ..= 0xFFFFFFFE => Some(id),
+        };
+
+        Ok(ChannelDefinition {
+            identifier: tmpl.read_u32(offset + 0)?,
+            offset: tmpl.read_u32(offset + 4)?,
+            message_table_identifier,
+        })
+    }
+
+    fn data(&self, tmpl: &WevtTemplate) -> Result<ChannelData> {
+        ChannelData::read(tmpl, self.offset as usize)
+    }
+}
+
+#[derive(Debug)]
+struct ChannelData {
+    value: Vec<u8>,
+}
+
+impl ChannelData {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<ChannelData> {
+        let size = tmpl.read_u32(offset + 0)?;
+        let value = tmpl.read_buf(offset + 4, size as usize - 4)?;
+        Ok(ChannelData { value })
+    }
+
+    fn string(&self) -> Result<String> {
+        let chars: Vec<u16> = self.value
+            .chunks_exact(2)
+            .map(|buf| LittleEndian::read_u16(buf))
+            .collect();
+
+        widestring::U16String::from_vec(chars).to_string().map_err(|e| e.into())
+    }
+}
+
+#[derive(Debug)]
+struct CHAN {
+    signature: u32,
+    size: u32,
+    channel_definitions: Vec<ChannelDefinition>,
+}
+
+impl CHAN {
+    fn read(tmpl: &WevtTemplate, offset: usize) -> Result<CHAN> {
+        let channel_definition_count = tmpl.read_u32(offset + 8)?;
+        let mut channel_definitions= vec![];
+        for i in 0..channel_definition_count {
+            channel_definitions.push(ChannelDefinition::read(tmpl, offset + 12 + (16 * i as usize))?);
+        }
+
+        Ok(CHAN {
+            signature: tmpl.read_u32(offset + 0)?,
+            size: tmpl.read_u32(offset + 4)?,
+            channel_definitions,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct EVTN {}
+#[derive(Debug)]
+struct OPCO {}
+#[derive(Debug)]
+struct TASK {}
+#[derive(Debug)]
+struct TTBL {}
+#[derive(Debug)]
+struct TEMP {}
+
+#[derive(Debug)]
+enum Element {
+    KEYW(KEYW),
+    LEVL(LEVL),
+    MAPS(MAPS),
+    BMAP(BMAP),
+    VMAP(VMAP),
+    CHAN(CHAN),
+    EVTN(EVTN),
+    OPCO(OPCO),
+    TASK(TASK),
+    TTBL(TTBL),
+    TEMP(TEMP),
 }
 
 pub fn get_wevt_templates(pe: &pe::PE) -> Result<Vec<WevtTemplate>> {
@@ -190,7 +286,30 @@ pub fn get_wevt_templates(pe: &pe::PE) -> Result<Vec<WevtTemplate>> {
             (rsrc::NodeIdentifier::ID(langid), rsrc::NodeChild::Data(descriptor)) => {
                 debug!("WEVT_TEMPLATE: lang: {:} offset: {:#x} size: {:#x}", langid, descriptor.rva, descriptor.size);
                 let buf = descriptor.data(&pe)?;
-                ret.push(WevtTemplate{langid, buf});
+                debug!("\n{}", util::hexdump(&buf[..0x800], 0x0));
+
+                let tmpl = WevtTemplate{langid, buf};
+                let crim = CRIM::read(&tmpl, 0x0)?;
+                debug!("crim: {:#x?}", crim);
+
+                for event_provider_ref in crim.event_providers.iter() {
+                    let event_provider = crim.event_providers[0].event_provider(&tmpl)?;
+                    debug!("event_provider]: {:#x?}", event_provider);
+
+                    for elem_ref in event_provider.element_descriptors.iter() {
+                        let elem = elem_ref.element(&tmpl)?;
+                        debug!("element: {:#x?}", elem);
+
+                        if let Element::CHAN(chan) = elem {
+                            let cd = &chan.channel_definitions[0];
+                            let data = cd.data(&tmpl)?;
+
+                            debug!("defintions.data: {:#x?}", data.string()?);
+                        }
+                    }
+                }
+
+                ret.push(tmpl);
             },
             _ => continue,
         }
