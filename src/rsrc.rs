@@ -3,10 +3,9 @@
 use log::debug;
 use anyhow::{Result};
 use byteorder::{ByteOrder, LittleEndian};
-
-use crate::{RVA};
-use crate::pe;
-
+use lancelot::{RVA};
+use lancelot::aspace::AddressSpace;
+use lancelot::loader::pe::{PE};
 
 pub struct ResourceSectionData {
     buf: Vec<u8>
@@ -34,7 +33,7 @@ impl ResourceSectionData {
         ResourceNode::read(self, 0x0)
     }
 
-    pub fn from_pe(pe: &pe::PE) -> Result<Option<ResourceSectionData>> {
+    pub fn from_pe(pe: &PE) -> Result<Option<ResourceSectionData>> {
         let opt_header = match pe.pe.header.optional_header {
             None => return Ok(None),
             Some(opt_header) => opt_header,
@@ -50,7 +49,7 @@ impl ResourceSectionData {
            rsrc_table.virtual_address,
             rsrc_table.virtual_address + rsrc_table.size);
 
-        let buf = pe.module.with_rva().read_bytes(
+        let buf = pe.module.address_space.read_buf(
             // goblin calls this a "virtual address", but its actually an RVA.
             rsrc_table.virtual_address as RVA,
             rsrc_table.size as usize)?;
@@ -242,8 +241,8 @@ impl ResourceDataDescriptor {
         })
     }
 
-    pub fn data(&self, pe: &pe::PE) -> Result<Vec<u8>> {
-        pe.module.with_rva().read_bytes(self.rva as RVA, self.size as usize)
+    pub fn data(&self, pe: &PE) -> Result<Vec<u8>> {
+        pe.module.address_space.read_buf(self.rva as RVA, self.size as usize)
     }
 }
 

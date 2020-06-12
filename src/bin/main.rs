@@ -5,7 +5,7 @@ extern crate anyhow;
 extern crate clap;
 extern crate log;
 
-use wevt_template::{*, util};
+use wevt_template::*;
 
 fn _main() -> Result<()> {
     better_panic::install();
@@ -56,10 +56,8 @@ fn _main() -> Result<()> {
         .expect("failed to configure logging");
 
 
-    let buf = util::read_file(matches.value_of("input").unwrap())?;
-    let pe = wevt_template::pe::load_pe(&buf)?;
-
-    debug!("pe: memory:\n{:?}", pe.module.address_space);
+    let buf = lancelot::util::read_file(matches.value_of("input").unwrap())?;
+    let pe = lancelot::loader::pe::load_pe(&buf)?;
 
     for (i, template) in get_wevt_templates(&pe)?.iter().enumerate() {
         info!("template {}:", i);

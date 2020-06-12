@@ -1,16 +1,9 @@
 use anyhow::{Result};
 use log::{warn, debug};
 use byteorder::{ByteOrder, LittleEndian};
-use crate::pe::PEError::FormatNotSupported;
+use lancelot::loader::pe::{PE};
 
-pub mod util;
-pub mod pagemap;
-pub mod module;
-pub mod pe;
 pub mod rsrc;
-
-type VA = u64;
-type RVA = u64;
 
 pub struct WevtTemplate {
     pub langid: u32,
@@ -317,7 +310,7 @@ impl TEMP {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<TEMP> {
         let buf = tmpl.read_buf(offset + 40, 0x100)?;
 
-        debug!("binxml:\n{}", util::hexdump(&buf, 0x0));
+        debug!("binxml:\n{}", lancelot::util::hexdump(&buf, 0x0));
 
         let de = evtx::binxml::deserializer::BinXmlDeserializer::init(
             &buf,
@@ -392,7 +385,7 @@ enum Element {
     TEMP(TEMP),
 }
 
-pub fn get_wevt_templates(pe: &pe::PE) -> Result<Vec<WevtTemplate>> {
+pub fn get_wevt_templates(pe: &PE) -> Result<Vec<WevtTemplate>> {
     // found at .rsrc node path:  "WEVT_TEMPLATE" / 0x1 / ${langid}
 
     let mut ret = vec![];
@@ -417,7 +410,7 @@ pub fn get_wevt_templates(pe: &pe::PE) -> Result<Vec<WevtTemplate>> {
             (rsrc::NodeIdentifier::ID(langid), rsrc::NodeChild::Data(descriptor)) => {
                 debug!("WEVT_TEMPLATE: lang: {:} offset: {:#x} size: {:#x}", langid, descriptor.rva, descriptor.size);
                 let buf = descriptor.data(&pe)?;
-                debug!("\n{}", util::hexdump(&buf[..0x400], 0x0));
+                debug!("\n{}", lancelot::util::hexdump(&buf[..0x400], 0x0));
 
                 let tmpl = WevtTemplate{langid, buf};
                 let crim = CRIM::read(&tmpl, 0x0)?;
