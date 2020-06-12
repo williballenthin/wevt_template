@@ -1,5 +1,5 @@
-use anyhow::{Result};
-use log::{error, info, debug};
+use anyhow::Result;
+use log::{debug, error, info};
 
 extern crate anyhow;
 extern crate clap;
@@ -22,9 +22,9 @@ fn _main() -> Result<()> {
         )
         .arg(
             clap::Arg::with_name("input")
-                    .required(true)
-                    .index(1)
-                    .help("path to input PE file"),
+                .required(true)
+                .index(1)
+                .help("path to input PE file"),
         )
         .get_matches();
 
@@ -54,7 +54,6 @@ fn _main() -> Result<()> {
         .filter(|metadata| !metadata.target().starts_with("goblin::pe"))
         .apply()
         .expect("failed to configure logging");
-
 
     let buf = lancelot::util::read_file(matches.value_of("input").unwrap())?;
     let pe = lancelot::loader::pe::load_pe(&buf)?;

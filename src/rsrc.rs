@@ -1,32 +1,32 @@
 // https://github.com/libyal/libexe/blob/4b74c91226e7d174bdff74315129bc17b956d564/documentation/Executable%20(EXE)%20file%20format.asciidoc#5-resource-section-data    opt_header.windows_fields.
 
-use log::debug;
-use anyhow::{Result};
+use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
-use lancelot::{RVA};
 use lancelot::aspace::AddressSpace;
-use lancelot::loader::pe::{PE};
+use lancelot::loader::pe::PE;
+use lancelot::RVA;
+use log::debug;
 
 pub struct ResourceSectionData {
-    buf: Vec<u8>
+    buf: Vec<u8>,
 }
 
 impl ResourceSectionData {
     fn read_u16(&self, offset: usize) -> Result<u16> {
         // TODO: bounds check
-        let buf = &self.buf[offset..offset+2];
+        let buf = &self.buf[offset..offset + 2];
         Ok(LittleEndian::read_u16(buf))
     }
 
     fn read_u32(&self, offset: usize) -> Result<u32> {
         // TODO: bounds check
-        let buf = &self.buf[offset..offset+4];
+        let buf = &self.buf[offset..offset + 4];
         Ok(LittleEndian::read_u32(buf))
     }
 
     fn read_buf(&self, offset: usize, length: usize) -> Result<Vec<u8>> {
         // TODO: bounds check
-        Ok(self.buf[offset..offset+length].to_vec())
+        Ok(self.buf[offset..offset + length].to_vec())
     }
 
     pub fn root(&self) -> Result<ResourceNode> {
@@ -47,14 +47,18 @@ impl ResourceSectionData {
         debug!(
             "rsrc: table at {:#x}-{:#x}",
             pe.module.address_space.base_address + rsrc_table.virtual_address as RVA,
-            pe.module.address_space.base_address + rsrc_table.virtual_address as RVA + rsrc_table.size as RVA);
+            pe.module.address_space.base_address
+                + rsrc_table.virtual_address as RVA
+                + rsrc_table.size as RVA
+        );
 
         let buf = pe.module.address_space.read_buf(
             // goblin calls this a "virtual address", but its actually an RVA.
             pe.module.address_space.base_address + rsrc_table.virtual_address as RVA,
-            rsrc_table.size as usize)?;
+            rsrc_table.size as usize,
+        )?;
 
-        Ok(Some(ResourceSectionData{buf}))
+        Ok(Some(ResourceSectionData { buf }))
     }
 }
 
@@ -95,17 +99,19 @@ impl ResourceNodeEntry {
     }
 
     fn has_name(&self) -> bool {
-        return self.id & 0x8000_0000 > 0
+        return self.id & 0x8000_0000 > 0;
     }
 
     fn is_branch_node(&self) -> bool {
-        return self.offset & 0x8000_0000 > 0
+        return self.offset & 0x8000_0000 > 0;
     }
 
     pub fn id(&self, rsrc: &ResourceSectionData) -> Result<NodeIdentifier> {
         let offset = self.id & 0x7FFF_FFFF;
         if self.has_name() {
-            Ok(NodeIdentifier::Name(ResourceNodeName::read(rsrc, offset as usize)?.name()?))
+            Ok(NodeIdentifier::Name(
+                ResourceNodeName::read(rsrc, offset as usize)?.name()?,
+            ))
         } else {
             Ok(NodeIdentifier::ID(offset))
         }
@@ -114,13 +120,9 @@ impl ResourceNodeEntry {
     pub fn child(&self, rsrc: &ResourceSectionData) -> Result<NodeChild> {
         let offset = (self.offset & 0x7FFF_FFFF) as usize;
         if self.is_branch_node() {
-            Ok(NodeChild::Node(
-                ResourceNode::read(rsrc, offset)?
-            ))
+            Ok(NodeChild::Node(ResourceNode::read(rsrc, offset)?))
         } else {
-            Ok(NodeChild::Data(
-                ResourceDataDescriptor::read(rsrc, offset)?
-            ))
+            Ok(NodeChild::Data(ResourceDataDescriptor::read(rsrc, offset)?))
         }
     }
 }
@@ -147,14 +149,18 @@ impl ResourceNode {
             offset += 8;
         }
 
-        Ok(ResourceNode{
+        Ok(ResourceNode {
             _header: header,
             named_entries,
             id_entries,
         })
     }
 
-    pub fn get_child_by_name(&self, rsrc: &ResourceSectionData, name: &str) -> Result<Option<NodeChild>> {
+    pub fn get_child_by_name(
+        &self,
+        rsrc: &ResourceSectionData,
+        name: &str,
+    ) -> Result<Option<NodeChild>> {
         for child in self.named_entries.iter() {
             match child.id(rsrc)? {
                 NodeIdentifier::ID(_) => continue,
@@ -168,7 +174,11 @@ impl ResourceNode {
         Ok(None)
     }
 
-    pub fn get_child_by_id(&self, rsrc: &ResourceSectionData, id: u32) -> Result<Option<NodeChild>> {
+    pub fn get_child_by_id(
+        &self,
+        rsrc: &ResourceSectionData,
+        id: u32,
+    ) -> Result<Option<NodeChild>> {
         for child in self.id_entries.iter() {
             match child.id(rsrc)? {
                 NodeIdentifier::Name(_) => continue,
@@ -183,7 +193,10 @@ impl ResourceNode {
     }
 
     // TODO: might want to make this an iterator, one day.
-    pub fn children(&self, rsrc: &ResourceSectionData) -> Result<Vec<(ResourceNodeEntry, NodeChild)>> {
+    pub fn children(
+        &self,
+        rsrc: &ResourceSectionData,
+    ) -> Result<Vec<(ResourceNodeEntry, NodeChild)>> {
         let mut ret = vec![];
 
         for entry in self.named_entries.iter().cloned() {
@@ -212,19 +225,20 @@ struct ResourceNodeName {
 impl ResourceNodeName {
     fn read(rsrc: &ResourceSectionData, offset: usize) -> Result<ResourceNodeName> {
         let character_count = rsrc.read_u16(offset + 0)?;
-        let character_buf = rsrc.read_buf(offset+2, 2*character_count as usize)?;
-        Ok(ResourceNodeName {
-            character_buf,
-        })
+        let character_buf = rsrc.read_buf(offset + 2, 2 * character_count as usize)?;
+        Ok(ResourceNodeName { character_buf })
     }
 
     fn name(&self) -> Result<String> {
-        let chars: Vec<u16> = self.character_buf
+        let chars: Vec<u16> = self
+            .character_buf
             .chunks_exact(2)
             .map(|buf| LittleEndian::read_u16(buf))
             .collect();
 
-        widestring::U16String::from_vec(chars).to_string().map_err(|e| e.into())
+        widestring::U16String::from_vec(chars)
+            .to_string()
+            .map_err(|e| e.into())
     }
 }
 
@@ -242,7 +256,10 @@ impl ResourceDataDescriptor {
     }
 
     pub fn data(&self, pe: &PE) -> Result<Vec<u8>> {
-        pe.module.address_space.relative.read_buf(self.rva as RVA, self.size as usize)
+        pe.module
+            .address_space
+            .relative
+            .read_buf(self.rva as RVA, self.size as usize)
     }
 }
 

@@ -1,7 +1,7 @@
-use anyhow::{Result};
-use log::{warn, debug};
+use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
-use lancelot::loader::pe::{PE};
+use lancelot::loader::pe::PE;
+use log::{debug, warn};
 
 pub mod rsrc;
 
@@ -40,7 +40,6 @@ struct ElementDescriptor {
     unk: u32,
 }
 
-
 impl WevtTemplate {
     fn read_u8(&self, offset: usize) -> Result<u8> {
         // TODO: bounds check
@@ -49,24 +48,24 @@ impl WevtTemplate {
 
     fn read_u16(&self, offset: usize) -> Result<u16> {
         // TODO: bounds check
-        let buf = &self.buf[offset..offset+2];
+        let buf = &self.buf[offset..offset + 2];
         Ok(LittleEndian::read_u16(buf))
     }
 
     fn read_u32(&self, offset: usize) -> Result<u32> {
         // TODO: bounds check
-        let buf = &self.buf[offset..offset+4];
+        let buf = &self.buf[offset..offset + 4];
         Ok(LittleEndian::read_u32(buf))
     }
 
     fn read_buf(&self, offset: usize, length: usize) -> Result<Vec<u8>> {
         // TODO: bounds check
-        Ok(self.buf[offset..offset+length].to_vec())
+        Ok(self.buf[offset..offset + length].to_vec())
     }
 
     fn read_into(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
         // TODO: bounds check
-        buf.copy_from_slice(&self.buf[offset..offset+buf.len()]);
+        buf.copy_from_slice(&self.buf[offset..offset + buf.len()]);
         Ok(())
     }
 
@@ -102,7 +101,7 @@ impl CRIM {
             major_version: tmpl.read_u16(offset + 8)?,
             minor_version: tmpl.read_u16(offset + 10)?,
             // event_provider_count, offset + 12
-            event_providers,  // offset + 16
+            event_providers, // offset + 16
         })
     }
 }
@@ -124,23 +123,26 @@ impl WEVT {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<WEVT> {
         let message_table_identifier = match tmpl.read_u32(offset + 8)? {
             0xFFFFFFFF => None,
-            id @ 0 ..= 0xFFFFFFFE => Some(id),
+            id @ 0..=0xFFFFFFFE => Some(id),
         };
 
         let element_descriptor_count = tmpl.read_u32(offset + 12)?;
         let mut element_descriptors = vec![];
         for i in 0..element_descriptor_count {
-            element_descriptors.push(ElementDescriptor::read(tmpl, offset + 20 + (8 * i as usize))?);
+            element_descriptors.push(ElementDescriptor::read(
+                tmpl,
+                offset + 20 + (8 * i as usize),
+            )?);
         }
 
         Ok(WEVT {
             signature: tmpl.read_u32(offset + 0)?,
             size: tmpl.read_u32(offset + 4)?,
-            message_table_identifier,  // offset + 8
+            message_table_identifier, // offset + 8
             // element_descriptor_count,  offset + 12
             // unk_count, offset + 16
-            element_descriptors,      // offset + 20
-            unk: vec![],              // offset + varies
+            element_descriptors, // offset + 20
+            unk: vec![],         // offset + varies
         })
     }
 }
@@ -161,9 +163,12 @@ impl ElementDescriptor {
             b"CHAN" => Ok(Element::CHAN(CHAN::read(tmpl, self.offset as usize)?)),
             b"TTBL" => Ok(Element::TTBL(TTBL::read(tmpl, self.offset as usize)?)),
             _ => {
-                warn!("unsupported element: {}", String::from_utf8_lossy(&signature));
+                warn!(
+                    "unsupported element: {}",
+                    String::from_utf8_lossy(&signature)
+                );
                 todo!()
-            },
+            }
         }
     }
 }
@@ -190,7 +195,7 @@ impl ChannelDefinition {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<ChannelDefinition> {
         let message_table_identifier = match tmpl.read_u32(offset + 12)? {
             0xFFFFFFFF => None,
-            id @ 0 ..= 0xFFFFFFFE => Some(id),
+            id @ 0..=0xFFFFFFFE => Some(id),
         };
 
         Ok(ChannelDefinition {
@@ -218,12 +223,15 @@ impl ChannelData {
     }
 
     fn string(&self) -> Result<String> {
-        let chars: Vec<u16> = self.value
+        let chars: Vec<u16> = self
+            .value
             .chunks_exact(2)
             .map(|buf| LittleEndian::read_u16(buf))
             .collect();
 
-        widestring::U16String::from_vec(chars).to_string().map_err(|e| e.into())
+        widestring::U16String::from_vec(chars)
+            .to_string()
+            .map_err(|e| e.into())
     }
 }
 
@@ -237,9 +245,12 @@ struct CHAN {
 impl CHAN {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<CHAN> {
         let channel_definition_count = tmpl.read_u32(offset + 8)?;
-        let mut channel_definitions= vec![];
+        let mut channel_definitions = vec![];
         for i in 0..channel_definition_count {
-            channel_definitions.push(ChannelDefinition::read(tmpl, offset + 12 + (16 * i as usize))?);
+            channel_definitions.push(ChannelDefinition::read(
+                tmpl,
+                offset + 12 + (16 * i as usize),
+            )?);
         }
 
         Ok(CHAN {
@@ -285,12 +296,15 @@ impl VariableName {
     }
 
     fn string(&self) -> Result<String> {
-        let chars: Vec<u16> = self.value
+        let chars: Vec<u16> = self
+            .value
             .chunks_exact(2)
             .map(|buf| LittleEndian::read_u16(buf))
             .collect();
 
-        widestring::U16String::from_vec(chars).to_string().map_err(|e| e.into())
+        widestring::U16String::from_vec(chars)
+            .to_string()
+            .map_err(|e| e.into())
     }
 }
 
@@ -304,7 +318,6 @@ struct TEMP {
     variable_descriptors: Vec<VariableDescriptor>,
     variable_names: Vec<VariableName>,
 }
-
 
 impl TEMP {
     fn read(tmpl: &WevtTemplate, offset: usize) -> Result<TEMP> {
@@ -337,7 +350,7 @@ impl TEMP {
             offset: tmpl.read_u32(offset + 16)?,
             guid: tmpl.read_guid(offset + 24)?,
             // TODO
-            bxml: vec![],  // how long is this??
+            bxml: vec![], // how long is this??
             variable_descriptors: vec![],
             variable_names: vec![],
         })
@@ -408,11 +421,14 @@ pub fn get_wevt_templates(pe: &PE) -> Result<Vec<WevtTemplate>> {
     for (lang, lang_node) in one_node.children(&rsrc)?.iter() {
         match (lang.id(&rsrc)?, lang_node) {
             (rsrc::NodeIdentifier::ID(langid), rsrc::NodeChild::Data(descriptor)) => {
-                debug!("WEVT_TEMPLATE: lang: {:} offset: {:#x} size: {:#x}", langid, descriptor.rva, descriptor.size);
+                debug!(
+                    "WEVT_TEMPLATE: lang: {:} offset: {:#x} size: {:#x}",
+                    langid, descriptor.rva, descriptor.size
+                );
                 let buf = descriptor.data(&pe)?;
                 debug!("\n{}", lancelot::util::hexdump(&buf[..0x400], 0x0));
 
-                let tmpl = WevtTemplate{langid, buf};
+                let tmpl = WevtTemplate { langid, buf };
                 let crim = CRIM::read(&tmpl, 0x0)?;
                 debug!("crim: {:#x?}", crim);
 
@@ -434,7 +450,7 @@ pub fn get_wevt_templates(pe: &PE) -> Result<Vec<WevtTemplate>> {
                 }
 
                 ret.push(tmpl);
-            },
+            }
             _ => continue,
         }
     }
