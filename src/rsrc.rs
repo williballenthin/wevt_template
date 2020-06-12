@@ -46,12 +46,12 @@ impl ResourceSectionData {
 
         debug!(
             "rsrc: table at {:#x}-{:#x}",
-           rsrc_table.virtual_address,
-            rsrc_table.virtual_address + rsrc_table.size);
+            pe.module.address_space.base_address + rsrc_table.virtual_address as RVA,
+            pe.module.address_space.base_address + rsrc_table.virtual_address as RVA + rsrc_table.size as RVA);
 
         let buf = pe.module.address_space.read_buf(
             // goblin calls this a "virtual address", but its actually an RVA.
-            rsrc_table.virtual_address as RVA,
+            pe.module.address_space.base_address + rsrc_table.virtual_address as RVA,
             rsrc_table.size as usize)?;
 
         Ok(Some(ResourceSectionData{buf}))
@@ -242,7 +242,7 @@ impl ResourceDataDescriptor {
     }
 
     pub fn data(&self, pe: &PE) -> Result<Vec<u8>> {
-        pe.module.address_space.read_buf(self.rva as RVA, self.size as usize)
+        pe.module.address_space.relative.read_buf(self.rva as RVA, self.size as usize)
     }
 }
 
