@@ -5,7 +5,7 @@ authors = ["William Ballenthin <william.ballenthin@fireeye.com>"]
 edition = "2018"
 
 [dependencies]
-goblin = {version="0.2", features=["pe32", "pe64"]}
+goblin = {version="0.3", features=["pe32", "pe64"]}
 log = "0.4"
 byteorder = "1"
 clap = "2"
