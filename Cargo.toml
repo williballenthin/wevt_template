@@ -18,7 +18,7 @@ hex = "0.4"
 tempfile = "3"
 simple_logger = "1"
 bitflags = "1"
-widestring = "0.4"
+widestring = "0.5"
 uuid = "0.8"
 evtx = {version="0.7", features=[]}
 encoding = "0.2"
