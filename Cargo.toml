@@ -8,7 +8,7 @@ edition = "2018"
 goblin = {version="0.3", features=["pe32", "pe64"]}
 log = "0.4"
 byteorder = "1"
-clap = "2"
+clap = "3"
 fern = "0.6"
 chrono = "0.4"
 better-panic = "0.2"
