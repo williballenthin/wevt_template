@@ -20,7 +20,7 @@ simple_logger = "1"
 bitflags = "1"
 widestring = "0.5"
 uuid = "1.0"
-evtx = {version="0.7", features=[]}
+evtx = {version="0.8", features=[]}
 encoding = "0.2"
 lancelot = {git = "https://github.com/williballenthin/lancelot", rev = "1285a34937aaa42ed0b65e6d6ab95eb0daca44be" }
 
